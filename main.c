@@ -12,13 +12,11 @@
 #include <DAQlib.h>
 #include <Windows.h>
 
+/* Symbolic constants */
 #define SIMULATOR	4
 
 #define RUN			0		// Switch #0
 #define RESET		1		// Switch #1
-
-#define TRUE		1
-#define FALSE		0
 
 #define ON			1
 #define OFF			0
@@ -26,24 +24,36 @@
 #define NUM_DISPLAYS 8
 #define SPACE_CHAR	0
 
+/* timing constants*/
 #define ONE_SECOND 1000
 #define ONE_MILLI_SECOND 1
+#define ONE_HUNDRED_MILLI_SECONDS 100
 #define ONE_MINUTE 60
 
-#define DECIMAL 2
+#define DECIMAL_MAX 10
 
-#define ONE_HUNDRED_MILLI_SECONDS 100
+/* Position for the digits to be written to the display */
+#define DECIMAL_OFFSET 1
+#define SECONDS_OFFSET 2
+#define MINUTES_OFFSET 4
 
+/* Width of the display for each type of digit */
+#define DECIMAL_WIDTH 1
+#define SECONDS_WIDTH 2
+#define MINUTES_WIDTH 2
+
+/* The simulator to run on */
 #define SIMULATOR 4
 
-#define ZEROS 00000000
-
+/* Function Prototypes */
 void runCounter(void);
 void writeDigit(int digit, int position);
 void writeNumber(int number, int length, int offset);
+void checkSwitches(void);
 
 int main(void) {
 
+	/* Check if the DAQ has been successfully opened, if so, run the counter */
 	if (setupDAQ(SIMULATOR)) {
 		printf("Counter is starting...\n\n");
 		runCounter();
@@ -57,95 +67,106 @@ int main(void) {
 	return 0;
 }
 
+/*
+ * Function runCounter - Runs the counter while also using other functions
+ *					   - The counter counts each one tenth of a second, seconds and minutes
+ *					   - Accurate to 250 Milliseconds within a time span of one minute.
+ */
 void runCounter(void) {
-	int startCount;
+	int startCount = 0;
 	int countDecimalSeconds = 0;
 	int countSeconds = 0;
 	int countMinutes = 0;
-	int countHours = 0;
-	int runSwitch, resetSwitch;
 	int input;
-	double time = 0;
 	double deltaT = 0;
-	double deltaTLoop = 0;
-	double extraTime = 0;
-	double extraTime2 = 0;
-	double time3;
-	double val, val2;
+	int runSwitch, resetSwitch;
 
-	printf("\nInitially, both switches should be off to proceed.\n");
-	printf("Please make sure both switches are off.\n\n");
+	checkSwitches();
 
-	do {
-		runSwitch = digitalRead(RUN);
-		resetSwitch = digitalRead(RESET);
-	} while (runSwitch == TRUE || resetSwitch == TRUE);
-
-	printf("Both switches are now off, proceeding ... \n");
-	printf("To start/stop the counter, use the RUN switch (#0). \n");
-	printf("To reset the counter, use the RESET switch (#1). \n");
-
-	startCount = 0;
 	countSeconds = startCount;
-	writeNumber(countSeconds, 4, 2);
+	writeNumber(countSeconds, SECONDS_WIDTH, SECONDS_OFFSET);
 
 	while (continueSuperLoop()) {
-		extraTime = millis();
+		deltaT = millis();
 
+		/* Reads the status of both switches */
 		runSwitch = digitalRead(RUN);
 		resetSwitch = digitalRead(RESET);
 
+		/* as long as the reset switch is ON, reset the count and clear the display. */
 		if (resetSwitch == ON) {
+			/* Make sure that the screen doesn't flicker, checking if the screen was already reset */
 			if (countSeconds > startCount) {
 				countSeconds = startCount;
 				countDecimalSeconds = startCount;
 				countMinutes = startCount;
-				writeNumber(countDecimalSeconds, 1, 1);
-				writeNumber(countSeconds, 2, 2);
-				writeNumber(countMinutes, 2, 4);
+				writeNumber(countDecimalSeconds, DECIMAL_WIDTH, DECIMAL_OFFSET);
+				writeNumber(countSeconds, SECONDS_WIDTH, SECONDS_OFFSET);
+				writeNumber(countMinutes, MINUTES_WIDTH, MINUTES_OFFSET);
 			}
 		}
-		else if (runSwitch == ON) {
-			if (countSeconds < ONE_MINUTE) {
-				if (countDecimalSeconds < 10) {
-					time = millis();
-					extraTime2 = millis();
-					countDecimalSeconds++;
-					writeNumber(countDecimalSeconds, 1, 1);
 
+		/* Otherwise, if the Run Switch is ON, run the counter and increase it*/
+		else if (runSwitch == ON) {
+			/* Checking that the seconds counter does not go above 60 */
+			if (countSeconds < ONE_MINUTE) {
+				/* Checking that the decimal seconds counter does not go above 10 */
+				if (countDecimalSeconds < DECIMAL_MAX) {
+					/* increase the counter */
+					countDecimalSeconds++;
+					/* print it to the screen */
+					writeNumber(countDecimalSeconds, DECIMAL_WIDTH, DECIMAL_OFFSET);
+
+					/* check if the user wants to quit*/
 					if (!continueSuperLoop())
 						return;
+					/* check if the reset switch was toggled ON */
 					if (digitalRead(RESET)) {
+						/* if so, reset the counters and break out of the loop */
 						countSeconds = startCount;
 						countDecimalSeconds = startCount;
 						countMinutes = startCount;
-						writeNumber(countDecimalSeconds, 1, 1);
-						writeNumber(countSeconds, 2, 2);
-						writeNumber(countMinutes, 2, 4);
+						writeNumber(countDecimalSeconds, DECIMAL_WIDTH, DECIMAL_OFFSET);
+						writeNumber(countSeconds, SECONDS_WIDTH, SECONDS_OFFSET);
+						writeNumber(countMinutes, MINUTES_WIDTH, MINUTES_OFFSET);
 						break;
 					}
-					delay(ONE_HUNDRED_MILLI_SECONDS - (millis() - time) - (extraTime2 - extraTime) - 15);
+
+					/* delay for a Maximum of one hundred milliseconds, taking into account the processing speed of the program */
+					delay(ONE_HUNDRED_MILLI_SECONDS - millis() + deltaT - 15);
 				}
+				/* otherwise, reset the decimal counter and increase the seconds counter and write to the display */
 				else {
 					countDecimalSeconds = startCount;
-					writeNumber(countDecimalSeconds, 1, 1);
+					writeNumber(countDecimalSeconds, DECIMAL_WIDTH, DECIMAL_OFFSET);
 					countSeconds++;
-					writeNumber(countSeconds, 2, 2);
-					delay(ONE_HUNDRED_MILLI_SECONDS - (millis() - time) - (extraTime2 - extraTime) - 15);
+					writeNumber(countSeconds, SECONDS_WIDTH, SECONDS_OFFSET);
+
+					/* delay for a Maximum of one hundred milliseconds, taking into account the processing speed of the program */
+					delay(ONE_HUNDRED_MILLI_SECONDS - millis() + deltaT - 15);
 				}
 			}
+			/* otherwise, reset the seconds counter and increase the minutes counter, and write the counts to the display */
 			else {
 				countSeconds = startCount;
-				writeNumber(countSeconds, 2, 2);
+				writeNumber(countSeconds, SECONDS_WIDTH, SECONDS_OFFSET);
 				countMinutes++;
-				writeNumber(countMinutes, 2, 4);
-				delay(ONE_HUNDRED_MILLI_SECONDS - (millis() - time) - (extraTime2 - extraTime) - 15);
+				writeNumber(countMinutes, MINUTES_WIDTH, MINUTES_OFFSET);
+
+				/* delay for a Maximum of one hundred milliseconds, taking into account the processing speed of the program */
+				delay(ONE_HUNDRED_MILLI_SECONDS - millis() + deltaT - 15);
 			}
 		}
 	}
 }
 
-/* writes a digit to a 7-segment display at a given position */
+/* 
+ * Function writeDigit - writes a digit to a 7-segment display at a given position
+ *
+ * Parameters:
+ *				digit - the digit to display on the DAQ
+ *				position - the index of the position where to display the digit on the DAQ
+ */
 void writeDigit(int digit, int position) {
 	/*
 	* const variables cannot be changed during program execution
@@ -160,7 +181,14 @@ void writeDigit(int digit, int position) {
 	}
 }
 
-/* writes a number to the 7-segment displays on the DAQ */
+/* 
+ * Function writeNumber - writes a number to the 7-segment displays on the DAQ
+ *
+ * Parameters: 
+ *				number - the number to write to the display
+ *				length - the length of the number to display
+ *				offset - the offset index, where to display the rightmost digit
+ */
 void writeNumber(int number, int length, int offset) {
 	/* next digit */
 	int digit = 0;
@@ -191,4 +219,24 @@ void writeNumber(int number, int length, int offset) {
 		displayWrite(SPACE_CHAR, pos);
 		pos++;
 	}
+}
+
+/*
+ * Function checkSwitches - Checks that the switches are both off
+ *						  - Loops until the user switches them off
+ */
+void checkSwitches(void) {
+	int runSwitch, resetSwitch;
+
+	printf("\nInitially, both switches should be off to proceed.\n");
+	printf("Please make sure both switches are off.\n\n");
+
+	do {
+		runSwitch = digitalRead(RUN);
+		resetSwitch = digitalRead(RESET);
+	} while (runSwitch == ON || resetSwitch == ON);
+
+	printf("Both switches are now off, proceeding ... \n");
+	printf("To start/stop the counter, use the RUN switch (#0). \n");
+	printf("To reset the counter, use the RESET switch (#1). \n");
 }
